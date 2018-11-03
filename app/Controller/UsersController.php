@@ -3,6 +3,10 @@ App::uses('AppController', 'Controller');
 
 class UsersController extends AppController
 {
+
+    private $email;
+    private $password;
+
     public $newkey;
 
     public $components = array(
@@ -935,6 +939,71 @@ class UsersController extends AppController
 
     public function login()
     {
+        if($this->request->data['btn']=='Verify') {
+               /*
+                   do somthing here, such as call for Lineopt
+                   if passed then call initLogin()
+                   else refresh the page
+               */
+              
+              $this->Bruteforce = ClassRegistry::init('Bruteforce');
+              if (!empty($this->request->data['User']['code'])) {
+                if ($this->Bruteforce->isBlacklisted($_SERVER['REMOTE_ADDR'], $this->request->data['User']['email'])) {
+                    throw new ForbiddenException('You have reached the maximum number of login attempts. Please wait ' . Configure::read('SecureAuth.expire') . ' seconds and try again.');
+                } else {
+                    $code = $this->request->data['User']['code'];
+              if (strcmp($code, '4444') == 0) {
+                $this->initLogin();
+              }else {
+        
+                $this->Flash->error('Invalid code, try again');
+                $this->Bruteforce->insert($_SERVER['REMOTE_ADDR'], $this->request->data['User']['email']);
+              }
+
+            } 
+
+            }
+
+           }  else if($this->request->data['btn']=='Login') {
+          
+       if ($this->request->is('post') ) {
+           $this->Bruteforce = ClassRegistry::init('Bruteforce');
+           if (!empty($this->request->data['User']['email'])) {
+               if ($this->Bruteforce->isBlacklisted($_SERVER['REMOTE_ADDR'], $this->request->data['User']['email'])) {
+                   throw new ForbiddenException('You have reached the maximum number of login attempts. Please wait ' . Configure::read('SecureAuth.expire') . ' seconds and try again.');
+           } else {
+          $email = $this->request->data['User']['email'];
+          $password = $this->request->data['User']['password'];
+          $this->$password = $password;
+          $this->$email = $email;
+           $user = $this->User->find('first', array(
+               'recursive' => -1,
+               'conditions' => array('User.email' => $email)
+           ));
+           $isPasswordIdentical = password_verify($password, $user['User']['password']);
+
+           if ($user && $isPasswordIdentical) {
+               // $this->Flash->success(__('New authkey generated.', true));
+              // $this->redirect(array('controller' => 'sms', 'action' => 'index'));
+              $this->set('isAuthorized', true);
+              $this->set('credentials', array($email, $password ));
+              
+          }else{
+               $this->set('isAuthorized', false);
+               $this->Flash->error('Invalid username or password, try again');
+               $this->Bruteforce->insert($_SERVER['REMOTE_ADDR'], $this->request->data['User']['email']);
+          }
+       }
+   }
+
+   }
+
+   } 
+
+    } //login
+
+    public function initLogin()
+    {
         if ($this->request->is('post') || $this->request->is('put')) {
             $this->Bruteforce = ClassRegistry::init('Bruteforce');
             if (!empty($this->request->data['User']['email'])) {
@@ -990,7 +1059,7 @@ class UsersController extends AppController
             }
             // don't display "invalid user" before first login attempt
             if ($this->request->is('post')) {
-                $this->Flash->error(__('Invalid username or password, try again'));
+                $this->Flash->error(__("Invalid username or password, try again"));
                 if (isset($this->request->data['User']['email'])) {
                     $this->Bruteforce->insert($_SERVER['REMOTE_ADDR'], $this->request->data['User']['email']);
                 }
@@ -1053,7 +1122,6 @@ class UsersController extends AppController
                     $org_id = $firstOrg['Organisation']['id'];
                 }
             }
-
             // populate the DB with the first user if it's empty
             if ($this->User->find('count') == 0) {
                 $this->User->runUpdates();
@@ -1061,6 +1129,7 @@ class UsersController extends AppController
             }
         }
     }
+
 
     public function routeafterlogin()
     {
@@ -1521,16 +1590,12 @@ class UsersController extends AppController
         // set all of the data up for the heatmaps
         $params = array(
             'fields' => array('name'),
-            'recursive' => -1,
-			'conditions' => array()
+            'recursive' => -1
         );
         if (!$this->_isSiteAdmin() && !empty(Configure::read('Security.hide_organisation_index_from_users'))) {
             $params['conditions'] = array('Organisation.id' => $this->Auth->user('org_id'));
         }
         $orgs = $this->User->Organisation->find('all', $params);
-		$local_orgs_params = $params;
-		$local_orgs_params['conditions']['Organisation.local'] = 1;
-		$local_orgs = $this->User->Organisation->find('all', $local_orgs_params);
         $this->loadModel('Log');
         $year = date('Y');
         $month = date('n');
@@ -1556,10 +1621,7 @@ class UsersController extends AppController
         $stats['proposal_count'] = $this->User->Event->ShadowAttribute->find('count', array('recursive' => -1));
 
         $stats['user_count'] = $this->User->find('count', array('recursive' => -1));
-		$stats['user_count_pgp'] = $this->User->find('count', array('recursive' => -1, 'conditions' => array('User.gpgkey !=' => '')));
         $stats['org_count'] = count($orgs);
-		$stats['local_org_count'] = count($local_orgs);
-		$stats['average_user_per_org'] = round($stats['user_count'] / $stats['local_org_count'], 1);
 
         $this->loadModel('Thread');
         $stats['thread_count'] = $this->Thread->find('count', array('conditions' => array('Thread.post_count >' => 0), 'recursive' => -1));
